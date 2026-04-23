@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Little Man Computer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f232c;
+    --line: #2a3040;
+    --text: #e7ecf3;
+    --muted: #8b95a7;
+    --accent: #4ea1ff;
+    --accent-2: #ffcb4e;
+    --danger: #ff5a72;
+    --ok: #58d67c;
+    --bus: #ffcb4e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: var(--text);
+    background: radial-gradient(1200px 700px at 70% -20%, #1b2030 0%, #0f1115 60%) fixed;
+    overflow: hidden;
+  }
+  h1 { font-size: 16px; margin: 0; letter-spacing: .5px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 8px; }
+  .app { display: grid; grid-template-columns: 320px 1fr 320px; grid-template-rows: 46px 1fr 180px; gap: 10px; padding: 10px; height: 100vh; }
+  header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 16px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 0 14px;
+  }
+  header .status { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  header .pill {
+    padding: 3px 8px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--muted); font-size: 11px;
+  }
+  header .pill.run { color: var(--ok); border-color: #1f3a26; background: #0f2416; }
+  header .pill.halt { color: var(--danger); border-color: #3a1f25; background: #241014; }
+  header .pill.wait { color: var(--accent-2); border-color: #3a331f; background: #241e10; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px; min-width: 0; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  .col-left { overflow: hidden; }
+  .col-center { position: relative; overflow: hidden; }
+  .col-right { overflow: hidden; }
+
+  textarea.code {
+    flex: 1; width: 100%;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--text); background: #0b0d12;
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px; resize: none; outline: none;
+    tab-size: 4;
+  }
+  select, button, input[type="number"], input[type="text"] {
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 10px; font: 12px ui-sans-serif, system-ui;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: linear-gradient(180deg, #2f7bd6, #1f5bb5); border-color: #2f7bd6; color: #fff; }
+  button.primary:hover { border-color: #6dafff; }
+  button.warn { background: #2a1a1f; border-color: #5a2732; color: #ffc5cf; }
+  button.warn:hover { border-color: var(--danger); }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 6px; }
+
+  /* memory grid */
+  .mem-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .mem-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 3px;
+    min-height: 0;
+  }
+  .cell {
+    position: relative;
+    background: #0b0d12;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font: 600 13px ui-monospace, Menlo, Consolas, monospace;
+    color: var(--text);
+    transition: background .15s, border-color .15s, transform .15s;
+    padding: 2px;
+    overflow: hidden;
+  }
+  .cell .addr {
+    position: absolute; top: 2px; left: 3px; font-size: 9px;
+    color: var(--muted); font-weight: 400;
+  }
+  .cell .val { font-size: 15px; font-variant-numeric: tabular-nums; }
+  .cell .lbl {
+    position: absolute; bottom: 2px; right: 3px; font-size: 9px;
+    color: var(--accent); font-weight: 400; max-width: 90%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cell.pc { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .cell.active { background: #1d2a1f; border-color: var(--ok); }
+  .cell.write { background: #2a1f1d; border-color: var(--accent-2); }
+  .cell.flash { animation: flashBg .5s ease; }
+  @keyframes flashBg {
+    0% { background: var(--accent); color: #000; }
+    100% { background: #0b0d12; color: var(--text); }
+  }
+
+  /* CPU panel */
+  .cpu { display: flex; flex-direction: column; gap: 8px; }
+  .reg {
+    display: grid; grid-template-columns: 50px 1fr; gap: 6px;
+    align-items: center;
+    background: #0b0d12; border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px;
+    transition: border-color .2s, background .2s;
+  }
+  .reg .k { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
+  .reg .v {
+    font: 600 16px ui-monospace, Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+    min-height: 20px;
+  }
+  .reg .sub { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .reg.flash { border-color: var(--accent); background: #15202e; }
+  .reg.flash-write { border-color: var(--accent-2); background: #2a251a; }
+
+  .io-box {
+    background: #0b0d12; border: 1px solid var(--line);
+    border-radius: 6px; padding: 8px; min-height: 48px;
+  }
+  .io-box h3 { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 0 0 4px; display: flex; justify-content: space-between; }
+  .io-queue {
+    display: flex; flex-wrap: wrap; gap: 3px;
+    font: 600 12px ui-monospace, Menlo, Consolas, monospace;
+  }
+  .io-queue span {
+    background: #1b2432; border: 1px solid var(--line);
+    padding: 2px 6px; border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  /* output print animation: bouncy pop + ring + sustained glow */
+  .io-queue span.new {
+    animation: printPop 1.4s cubic-bezier(.2,.9,.3,1.2) both;
+    position: relative;
+    font-weight: 700;
+    font-size: 15px;
+    z-index: 2;
+  }
+  @keyframes printPop {
+    0%   { transform: scale(0) rotate(-10deg); background: var(--accent-2); color: #000;
+           box-shadow: 0 0 0 0 rgba(255,203,78,.9); border-color: var(--accent-2); }
+    25%  { transform: scale(1.55) rotate(4deg); background: var(--accent-2); color: #000;
+           box-shadow: 0 0 0 10px rgba(255,203,78,.45); }
+    45%  { transform: scale(0.88) rotate(0); }
+    60%  { transform: scale(1.12); }
+    80%  { transform: scale(1); background: var(--accent-2); color: #000;
+           box-shadow: 0 0 16px 2px rgba(255,203,78,.55); }
+    100% { transform: scale(1); background: #1b2432; color: var(--text);
+           box-shadow: 0 0 0 0 rgba(255,203,78,0); border-color: var(--line); }
+  }
+  .io-box.print-flash {
+    animation: boxFlash 1.4s ease-out;
+  }
+  @keyframes boxFlash {
+    0%   { box-shadow: 0 0 0 0 rgba(255,203,78,.0); border-color: var(--line); }
+    20%  { box-shadow: 0 0 28px 4px rgba(255,203,78,.55); border-color: var(--accent-2); }
+    100% { box-shadow: 0 0 0 0 rgba(255,203,78,.0); border-color: var(--line); }
+  }
+
+  .mode-btn { padding: 4px 10px; font-size: 11px; }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .mode-explain {
+    font-size: 11px; line-height: 1.45; color: var(--muted);
+    background: #0b0d12; border: 1px dashed var(--line);
+    border-radius: 5px; padding: 6px 8px; margin-bottom: 6px;
+  }
+  .mode-explain b { color: var(--text); font-weight: 600; }
+
+  /* ----- Popovers ----- */
+  [popover] {
+    border: 1px solid var(--accent);
+    background: #131723;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 12px 14px;
+    max-width: 340px;
+    font: 12px/1.5 ui-sans-serif, system-ui;
+    box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 0 1px rgba(78,161,255,.18);
+    margin: 0;          /* override UA */
+  }
+  [popover]::backdrop { background: transparent; }
+  .reg-popover h4 {
+    margin: 0 0 6px; color: var(--accent); font-size: 13px;
+    letter-spacing: .02em;
+  }
+  .reg-popover p { margin: 4px 0; color: var(--text); }
+  .reg-popover em { color: var(--accent-2); font-style: normal; font-weight: 600; }
+  .reg-popover code {
+    background: #0b0d12; border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 4px; font-size: 11px;
+  }
+  .reg[data-popover] { cursor: help; }
+  .reg[data-popover]:hover { border-color: var(--accent); }
+
+  /* cheat sheet */
+  .cheatsheet {
+    max-width: 720px;
+    border-color: var(--accent-2);
+    box-shadow: 0 20px 60px rgba(0,0,0,.7), 0 0 0 1px rgba(255,203,78,.18);
+  }
+  .cheatsheet h3 {
+    margin: 0 0 10px; color: var(--accent-2);
+    font-size: 14px; letter-spacing: .05em;
+  }
+  .cheatsheet table { width: 100%; border-collapse: collapse; }
+  .cheatsheet td {
+    padding: 5px 8px; border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .cheatsheet td:first-child {
+    font: 700 13px ui-monospace, Menlo, Consolas, monospace;
+    color: var(--accent); width: 64px;
+  }
+  .cheatsheet td:nth-child(2) {
+    font: 600 12px ui-monospace; color: var(--accent-2);
+    width: 52px; text-align: center;
+  }
+  .cheatsheet td:last-child { color: var(--text); }
+  .cheatsheet .foot {
+    margin-top: 8px; color: var(--muted); font-size: 11px;
+    border-top: 1px dashed var(--line); padding-top: 8px;
+  }
+  .cheatsheet .close {
+    float: right; font-size: 11px; padding: 3px 8px;
+  }
+  #cheatBtn {
+    padding: 5px 10px; font-size: 11px;
+    background: #1b2432; border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  #cheatBtn:hover { background: #1e2a3c; }
+  #promptBox.pulse { animation: promptPulse 1s ease-in-out infinite; }
+  @keyframes promptPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,203,78,0); }
+    50%      { box-shadow: 0 0 0 3px rgba(255,203,78,.35); }
+  }
+
+  /* bottom controls */
+  .ctrls {
+    grid-column: 1 / -1;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 12px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px;
+  }
+  .ctrls .group h2 { margin-bottom: 6px; }
+  .speed-wrap { display: flex; align-items: center; gap: 10px; }
+  .speed-wrap input[type="range"] { flex: 1; accent-color: var(--accent); }
+  .speed-val { font: 600 13px ui-monospace; color: var(--accent-2); min-width: 70px; text-align: right; }
+
+  .log {
+    flex: 1; overflow-y: auto; min-height: 0;
+    background: #0b0d12; border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px;
+    font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace;
+    color: var(--muted);
+    white-space: pre-wrap;
+  }
+  .log .line { margin: 0; }
+  .log .line.err { color: var(--danger); }
+  .log .line.ok { color: var(--ok); }
+  .log .line.exec { color: var(--accent); }
+
+  /* flow overlay */
+  #flow {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 50;
+  }
+  .packet {
+    position: fixed;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font: 700 11px ui-monospace, Menlo, Consolas, monospace;
+    background: var(--bus); color: #000;
+    box-shadow: 0 0 10px rgba(255,203,78,.6), 0 0 20px rgba(255,203,78,.3);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 60;
+    white-space: nowrap;
+  }
+  .packet.addr { background: var(--accent); color: #fff; box-shadow: 0 0 10px rgba(78,161,255,.5); }
+  .packet.ctrl { background: #b572ff; color: #fff; box-shadow: 0 0 10px rgba(181,114,255,.5); }
+  svg.bus-layer { position: fixed; inset: 0; pointer-events: none; z-index: 55; }
+  svg.bus-layer path {
+    fill: none; stroke: var(--bus); stroke-width: 2;
+    stroke-dasharray: 6 4;
+    opacity: 0; filter: drop-shadow(0 0 4px var(--bus));
+  }
+  svg.bus-layer path.show { opacity: .85; animation: dash .6s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -20; } }
+
+  .legend { display: flex; gap: 10px; margin-top: 4px; font-size: 10px; color: var(--muted); }
+  .legend span::before {
+    content: ""; display: inline-block; width: 10px; height: 10px;
+    margin-right: 4px; border-radius: 2px; vertical-align: -1px;
+  }
+  .legend .d::before { background: var(--bus); }
+  .legend .a::before { background: var(--accent); }
+  .legend .c::before { background: #b572ff; }
+  .small { font-size: 11px; color: var(--muted); }
+  .hint { color: var(--muted); font-size: 11px; margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header>
+    <h1>Little Man Computer</h1>
+    <span class="pill" id="stateBadge">idle</span>
+    <span class="pill" id="phaseBadge">—</span>
+    <div class="status">
+      <span id="cycleCounter">cycles: 0</span>
+      &nbsp;·&nbsp;
+      <span id="insnCounter">insns: 0</span>
+    </div>
+  </header>
+
+  <!-- LEFT: Editor -->
+  <section class="panel col-left">
+    <div class="row" style="margin-bottom: 8px;">
+      <h2 style="margin: 0; flex:1;">Source</h2>
+      <select id="sampleSel" title="Load example">
+        <option value="">Examples…</option>
+        <option value="add">Add two numbers</option>
+        <option value="countdown">Countdown from input</option>
+        <option value="multiply">Multiply (A × B)</option>
+        <option value="fib">Fibonacci</option>
+        <option value="hello">Print "HI" (OTC)</option>
+        <option value="echo">Echo until zero</option>
+      </select>
+    </div>
+    <textarea id="code" class="code" spellcheck="false"></textarea>
+    <div class="row" style="margin-top: 8px;">
+      <button id="assembleBtn" class="primary">Assemble ⟹ Memory</button>
+      <button id="clearBtn">Clear Mem</button>
+    </div>
+    <div class="hint row" style="gap:8px;">
+      <button id="cheatBtn" popovertarget="cheatSheet">📖 Cheat Sheet</button>
+      <span>labels have no punctuation · <code>#</code> or <code>//</code> for comments</span>
+    </div>
+  </section>
+
+  <!-- CENTER: Memory grid -->
+  <section class="panel col-center">
+    <div class="row" style="margin-bottom: 8px;">
+      <h2 style="margin: 0; flex:1;">Memory (100 mailboxes)</h2>
+      <span class="small">PC-highlight = next instruction</span>
+    </div>
+    <div class="mem-wrap">
+      <div class="mem-grid" id="memGrid"></div>
+    </div>
+    <div class="legend">
+      <span class="d">Data bus</span>
+      <span class="a">Address bus</span>
+      <span class="c">Control</span>
+    </div>
+  </section>
+
+  <!-- RIGHT: CPU + IO -->
+  <section class="panel col-right">
+    <h2>CPU <span class="small" style="font-weight:400; text-transform:none; letter-spacing:0;">(hover for details)</span></h2>
+    <div class="cpu">
+      <div class="reg" id="regPC"  data-popover="pop-PC"><span class="k">PC</span><span class="v"><span id="vPC">00</span><span class="sub">program counter</span></span></div>
+      <div class="reg" id="regMAR" data-popover="pop-MAR"><span class="k">MAR</span><span class="v"><span id="vMAR">—</span><span class="sub">memory addr</span></span></div>
+      <div class="reg" id="regMDR" data-popover="pop-MDR"><span class="k">MDR</span><span class="v"><span id="vMDR">—</span><span class="sub">memory data</span></span></div>
+      <div class="reg" id="regIR"  data-popover="pop-IR"><span class="k">IR</span><span class="v"><span id="vIR">—</span><span class="sub">instruction</span></span></div>
+      <div class="reg" id="regACC" data-popover="pop-ACC"><span class="k">ACC</span><span class="v"><span id="vACC">0</span><span class="sub">accumulator</span></span></div>
+    </div>
+
+    <div style="height: 10px;"></div>
+    <h2>Input</h2>
+    <div class="io-box" id="inBox">
+      <h3>
+        <span id="inModeLabel">queue (edit: comma-sep)</span>
+        <span id="inCount" class="small">0 items</span>
+      </h3>
+      <div class="row" style="margin-bottom: 6px; gap: 4px;">
+        <button id="modePromptBtn"  class="mode-btn active">Prompt</button>
+        <button id="modeQueueBtn"   class="mode-btn">Queue</button>
+      </div>
+      <div id="modeExplain" class="mode-explain"></div>
+      <input id="inField" type="text" placeholder="e.g. 5, 3, 10" style="width:100%; font-family:ui-monospace; padding: 4px 6px;" />
+      <div class="io-queue" id="inQueue"></div>
+      <div id="promptBox" style="display:none; margin-top:6px;">
+        <div class="small" id="promptLabel" style="margin-bottom:4px; color:var(--accent-2);">⏸ waiting for input — type a value and press Enter</div>
+        <input id="promptField" type="text" placeholder="enter a number"
+               style="width:100%; font: 600 14px ui-monospace; padding: 6px 8px;
+                      background:#2a251a; border:1px solid var(--accent-2); color:var(--text); border-radius:6px;" />
+      </div>
+    </div>
+
+    <div style="height: 10px;"></div>
+    <h2>Output</h2>
+    <div class="io-box" id="outBox">
+      <h3><span>printed values</span><span id="outCount" class="small">0 items</span></h3>
+      <div class="io-queue" id="outQueue"></div>
+    </div>
+  </section>
+
+  <!-- BOTTOM: controls + log -->
+  <section class="ctrls">
+    <div class="group">
+      <h2>Execution</h2>
+      <div class="row">
+        <button id="runBtn" class="primary">▶ Run</button>
+        <button id="stepBtn">⟶ Step</button>
+        <button id="pauseBtn">⏸ Pause</button>
+        <button id="resetBtn" class="warn">⟲ Reset</button>
+      </div>
+      <div class="hint">Step runs a single fetch-execute cycle with full animation.</div>
+    </div>
+    <div class="group">
+      <h2>Speed</h2>
+      <div class="speed-wrap">
+        <span class="small">slow</span>
+        <input id="speedSlider" type="range" min="0" max="100" value="55" />
+        <span class="small">fast</span>
+        <span class="speed-val" id="speedLabel">800 ms</span>
+      </div>
+      <div class="hint">Controls duration of one micro-step animation.</div>
+    </div>
+    <div class="group" style="min-height: 0; display:flex; flex-direction:column;">
+      <h2>Trace</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</div>
+
+<svg class="bus-layer" id="busLayer"><path id="busPath" d=""/></svg>
+<div id="flow"></div>
+
+<!-- Register popovers -->
+<div id="pop-PC" popover="manual" class="reg-popover">
+  <h4>PC — Program Counter</h4>
+  <p>Holds the address of the <em>next</em> instruction the computer will fetch.</p>
+  <p>After every fetch, it automatically ticks up by 1, so the machine naturally walks through memory in order.</p>
+  <p>Jump instructions (<code>BRA</code>, <code>BRZ</code>, <code>BRP</code>) overwrite it to make the program skip to a different line.</p>
+</div>
+<div id="pop-MAR" popover="manual" class="reg-popover">
+  <h4>MAR — Memory Address Register</h4>
+  <p>A sticky note with the mailbox number the CPU is about to <em>read from</em> or <em>write to</em>.</p>
+  <p>Think of it as: "which mailbox am I pointing at right now?"</p>
+</div>
+<div id="pop-MDR" popover="manual" class="reg-popover">
+  <h4>MDR — Memory Data Register</h4>
+  <p>A temporary buffer that carries a value <em>between memory and the rest of the CPU</em>.</p>
+  <p>On a read, the mailbox copies its content into the MDR. On a write, the CPU puts a value here and memory picks it up.</p>
+</div>
+<div id="pop-IR" popover="manual" class="reg-popover">
+  <h4>IR — Instruction Register</h4>
+  <p>Stores the 3-digit instruction that was just fetched, so the CPU can <em>look at it</em> and decide what to do.</p>
+  <p>The first digit tells the CPU <em>what kind</em> of instruction it is (add, store, branch…) and the last two digits are usually an address.</p>
+</div>
+<div id="pop-ACC" popover="manual" class="reg-popover">
+  <h4>ACC — Accumulator</h4>
+  <p>The computer's single "scratch pad" for numbers. Almost every arithmetic operation uses it.</p>
+  <p><code>LDA</code> loads a value into it, <code>ADD</code>/<code>SUB</code> change it, <code>STA</code> saves it to memory, and <code>OUT</code> prints it.</p>
+  <p>Values range from <em>-999 to 999</em>.</p>
+</div>
+
+<!-- Cheat sheet popover -->
+<div id="cheatSheet" popover class="cheatsheet">
+  <button class="close" popovertarget="cheatSheet" popovertargetaction="hide">close ✕</button>
+  <h3>📖 LMC Instruction Cheat Sheet</h3>
+  <table>
+    <tr><td>INP</td><td>901</td><td>Read a number from the input and put it in the <b>accumulator</b>.</td></tr>
+    <tr><td>OUT</td><td>902</td><td>Print the value currently in the accumulator.</td></tr>
+    <tr><td>OTC</td><td>922</td><td>Print the accumulator as a character (e.g. 72 → "H"). Non-standard extension.</td></tr>
+    <tr><td>LDA xx</td><td>5xx</td><td><b>Load</b> — copy the contents of mailbox <code>xx</code> into the accumulator.</td></tr>
+    <tr><td>STA xx</td><td>3xx</td><td><b>Store</b> — copy the accumulator into mailbox <code>xx</code> (also written <code>STO</code>).</td></tr>
+    <tr><td>ADD xx</td><td>1xx</td><td>Add the value in mailbox <code>xx</code> to the accumulator.</td></tr>
+    <tr><td>SUB xx</td><td>2xx</td><td>Subtract the value in mailbox <code>xx</code> from the accumulator.</td></tr>
+    <tr><td>BRA xx</td><td>6xx</td><td><b>Branch always</b> — jump: next instruction comes from address <code>xx</code>.</td></tr>
+    <tr><td>BRZ xx</td><td>7xx</td><td><b>Branch if zero</b> — jump to <code>xx</code> only if the accumulator is exactly 0.</td></tr>
+    <tr><td>BRP xx</td><td>8xx</td><td><b>Branch if positive</b> — jump to <code>xx</code> if the accumulator is 0 or more.</td></tr>
+    <tr><td>HLT</td><td>000</td><td>Stop the computer. The Little Man goes home.</td></tr>
+    <tr><td>DAT n</td><td>—</td><td>Not an instruction: reserves a mailbox to hold a value <code>n</code> (default 0). Used for variables.</td></tr>
+  </table>
+  <div class="foot">
+    A <b>label</b> at the start of a line gives that mailbox a name you can reference. Example:
+    <code>COUNT DAT 0</code> &nbsp;→&nbsp; then later <code>LDA COUNT</code>.
+  </div>
+</div>
+
+<script>
+/* ============================================================
+ *  Little Man Computer  —  single-file web app
+ * ============================================================ */
+
+/* ---------- State ---------- */
+const STATE = {
+  mem: new Array(100).fill(0),
+  labels: {},           // addr -> label
+  acc: 0,
+  pc: 0,
+  mar: null,
+  mdr: null,
+  ir: null,
+  halted: false,
+  running: false,
+  waitingInput: false,
+  cycles: 0,
+  insns: 0,
+  inputQ: [],
+  outputQ: [],
+  baseMs: 800,          // per micro-step
+  inputMode: 'prompt',  // 'queue' | 'prompt'
+  pendingInput: null,   // resolver for the prompt-mode promise
+};
+
+/* ---------- DOM refs ---------- */
+const $ = id => document.getElementById(id);
+const memGridEl = $('memGrid');
+const cellEls = [];
+const logEl = $('log');
+const vPC = $('vPC'), vMAR = $('vMAR'), vMDR = $('vMDR'), vIR = $('vIR'), vACC = $('vACC');
+const rPC = $('regPC'), rMAR = $('regMAR'), rMDR = $('regMDR'), rIR = $('regIR'), rACC = $('regACC');
+const stateBadge = $('stateBadge'), phaseBadge = $('phaseBadge');
+const inQueueEl = $('inQueue'), outQueueEl = $('outQueue');
+const inCountEl = $('inCount'), outCountEl = $('outCount');
+const cycleCounter = $('cycleCounter'), insnCounter = $('insnCounter');
+const busPath = $('busPath');
+
+/* ---------- Build memory grid ---------- */
+for (let i = 0; i < 100; i++) {
+  const c = document.createElement('div');
+  c.className = 'cell';
+  c.innerHTML = `<span class="addr">${String(i).padStart(2,'0')}</span>
+                 <span class="val">000</span>
+                 <span class="lbl"></span>`;
+  memGridEl.appendChild(c);
+  cellEls.push(c);
+}
+
+/* ---------- Log ---------- */
+function log(msg, cls='') {
+  const ln = document.createElement('div');
+  ln.className = 'line ' + cls;
+  ln.textContent = msg;
+  logEl.appendChild(ln);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+/* ---------- Speed mapping ---------- */
+function updateSpeed() {
+  const v = +$('speedSlider').value; // 0..100
+  // Exponential: slider 0 -> 2500ms, 50 -> ~600ms, 100 -> 30ms
+  const ms = Math.round(2500 * Math.pow(0.015, v/100));
+  STATE.baseMs = Math.max(20, ms);
+  $('speedLabel').textContent = STATE.baseMs + ' ms';
+}
+$('speedSlider').addEventListener('input', updateSpeed);
+updateSpeed();
+
+function sleep(ms) { return new Promise(r => setTimeout(r, Math.max(1, ms))); }
+const pace = (frac=1) => sleep(STATE.baseMs * frac);
+
+/* ---------- Rendering ---------- */
+function fmtACC(v) {
+  const s = (v<0?'-':'') + String(Math.abs(v)).padStart(3,'0');
+  return s;
+}
+function fmtIR(v) {
+  if (v === null || v === undefined) return '—';
+  return String(v).padStart(3,'0');
+}
+function renderRegs() {
+  vPC.textContent = String(STATE.pc).padStart(2,'0');
+  vMAR.textContent = STATE.mar===null ? '—' : String(STATE.mar).padStart(2,'0');
+  vMDR.textContent = STATE.mdr===null ? '—' : fmtIR(STATE.mdr);
+  vIR.textContent = STATE.ir===null ? '—' : fmtIR(STATE.ir);
+  vACC.textContent = fmtACC(STATE.acc);
+  cycleCounter.textContent = 'cycles: ' + STATE.cycles;
+  insnCounter.textContent = 'insns: ' + STATE.insns;
+}
+function renderMemCell(i) {
+  const c = cellEls[i];
+  c.querySelector('.val').textContent = String(STATE.mem[i]).padStart(3,'0');
+  c.querySelector('.lbl').textContent = STATE.labels[i] || '';
+}
+function renderAllMem() { for (let i=0; i<100; i++) renderMemCell(i); markPC(); }
+function markPC() {
+  cellEls.forEach(c => c.classList.remove('pc'));
+  if (STATE.pc >= 0 && STATE.pc < 100) cellEls[STATE.pc].classList.add('pc');
+}
+function renderIO() {
+  inQueueEl.innerHTML = '';
+  STATE.inputQ.forEach(v => {
+    const s = document.createElement('span');
+    s.textContent = String(v);
+    inQueueEl.appendChild(s);
+  });
+  inCountEl.textContent = STATE.inputQ.length + ' items';
+  outQueueEl.innerHTML = '';
+  STATE.outputQ.forEach(v => {
+    const s = document.createElement('span');
+    s.textContent = v;
+    outQueueEl.appendChild(s);
+  });
+  outCountEl.textContent = STATE.outputQ.length + ' items';
+}
+function setState(label) {
+  stateBadge.className = 'pill';
+  stateBadge.textContent = label;
+  if (label === 'running') stateBadge.classList.add('run');
+  else if (label === 'halted') stateBadge.classList.add('halt');
+  else if (label === 'wait input') stateBadge.classList.add('wait');
+}
+function setPhase(p) { phaseBadge.textContent = p || '—'; }
+
+/* ---------- Flow animation ---------- */
+function center(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width/2, y: r.top + r.height/2 };
+}
+async function flyPacket(fromEl, toEl, value, opts={}) {
+  const cls = opts.kind === 'addr' ? 'addr' : (opts.kind === 'ctrl' ? 'ctrl' : '');
+  const p = document.createElement('div');
+  p.className = 'packet ' + cls;
+  p.textContent = value;
+  document.body.appendChild(p);
+  const a = center(fromEl), b = center(toEl);
+  p.style.left = a.x + 'px'; p.style.top = a.y + 'px';
+  p.style.transition = `left ${STATE.baseMs*0.9}ms cubic-bezier(.45,.05,.55,.95), top ${STATE.baseMs*0.9}ms cubic-bezier(.45,.05,.55,.95), opacity 200ms`;
+  // draw bus path
+  busPath.setAttribute('d', `M ${a.x} ${a.y} L ${b.x} ${b.y}`);
+  busPath.style.stroke = cls==='addr' ? '#4ea1ff' : (cls==='ctrl' ? '#b572ff' : '#ffcb4e');
+  busPath.classList.add('show');
+  requestAnimationFrame(() => {
+    p.style.left = b.x + 'px'; p.style.top = b.y + 'px';
+  });
+  await pace(0.9);
+  p.style.opacity = '0';
+  busPath.classList.remove('show');
+  setTimeout(() => p.remove(), 200);
+}
+function flashReg(el, write=false) {
+  el.classList.add(write ? 'flash-write' : 'flash');
+  setTimeout(() => el.classList.remove(write ? 'flash-write' : 'flash'), Math.max(250, STATE.baseMs*0.8));
+}
+function flashCell(i, write=false) {
+  cellEls[i].classList.add(write ? 'write' : 'active');
+  setTimeout(() => cellEls[i].classList.remove(write ? 'write' : 'active'), Math.max(300, STATE.baseMs*0.9));
+}
+
+/* ---------- Assembler ---------- */
+const MNEMONICS = {
+  HLT: { op:0, needsArg:false, implicit:0 },
+  COB: { op:0, needsArg:false, implicit:0 },  // alias
+  ADD: { op:1, needsArg:true },
+  SUB: { op:2, needsArg:true },
+  STA: { op:3, needsArg:true },
+  STO: { op:3, needsArg:true },
+  LDA: { op:5, needsArg:true },
+  BRA: { op:6, needsArg:true },
+  BR:  { op:6, needsArg:true },
+  BRZ: { op:7, needsArg:true },
+  BRP: { op:8, needsArg:true },
+  INP: { op:9, needsArg:false, implicit:901 },
+  IN:  { op:9, needsArg:false, implicit:901 },
+  OUT: { op:9, needsArg:false, implicit:902 },
+  OTC: { op:9, needsArg:false, implicit:922 },
+  DAT: { op:-1 },  // special
+};
+
+function assemble(src) {
+  // strip comments, normalize
+  const rawLines = src.split(/\r?\n/);
+  const lines = [];
+  for (let i = 0; i < rawLines.length; i++) {
+    let s = rawLines[i].replace(/\/\/.*$/,'').replace(/#.*$/,'').replace(/;.*$/,'').trim();
+    if (!s) continue;
+    lines.push({ src: rawLines[i], n: i+1, tokens: s.split(/[\s,]+/).filter(Boolean) });
+  }
+
+  // pass 1: assign addresses + collect labels
+  const labels = {};
+  const items = [];
+  let addr = 0;
+  for (const ln of lines) {
+    let t = ln.tokens.slice();
+    // detect label: a token that isn't a mnemonic at position 0
+    let label = null;
+    if (t.length && !(t[0].toUpperCase() in MNEMONICS)) {
+      label = t.shift();
+    }
+    if (!t.length && label) {
+      // bare label line — attach to next instruction
+      labels[label] = addr;
+      continue;
+    }
+    const mne = t[0] ? t[0].toUpperCase() : '';
+    if (!(mne in MNEMONICS)) {
+      throw new Error(`Line ${ln.n}: unknown mnemonic "${t[0]}"`);
+    }
+    if (label) labels[label] = addr;
+    items.push({ n: ln.n, addr, mne, args: t.slice(1) });
+    if (addr > 99) throw new Error(`Line ${ln.n}: program exceeds 100 mailboxes`);
+    addr++;
+  }
+
+  // pass 2: resolve
+  const mem = new Array(100).fill(0);
+  const labelsByAddr = {};
+  for (const [k, v] of Object.entries(labels)) labelsByAddr[v] = k;
+
+  for (const it of items) {
+    const spec = MNEMONICS[it.mne];
+    if (it.mne === 'DAT') {
+      let v = 0;
+      if (it.args.length) {
+        v = resolveNum(it.args[0], labels, it.n);
+      }
+      mem[it.addr] = clampCell(v);
+      continue;
+    }
+    if (spec.needsArg) {
+      if (!it.args.length) throw new Error(`Line ${it.n}: ${it.mne} needs an address`);
+      const a = resolveNum(it.args[0], labels, it.n);
+      if (a < 0 || a > 99) throw new Error(`Line ${it.n}: address ${a} out of range`);
+      mem[it.addr] = spec.op * 100 + a;
+    } else {
+      mem[it.addr] = spec.implicit;
+    }
+  }
+
+  return { mem, labels: labelsByAddr };
+}
+function resolveNum(tok, labels, n) {
+  if (tok in labels) return labels[tok];
+  if (/^-?\d+$/.test(tok)) return parseInt(tok, 10);
+  throw new Error(`Line ${n}: undefined label "${tok}"`);
+}
+function clampCell(v) {
+  // LMC cells hold 0..999 conventionally; allow -999..999 for DAT
+  if (v > 999) v = 999;
+  if (v < -999) v = -999;
+  return v;
+}
+
+/* ---------- CPU ---------- */
+async function fetchPhase() {
+  setPhase('fetch: PC → MAR');
+  // PC -> MAR via address bus
+  flashReg(rPC);
+  await flyPacket(rPC, rMAR, String(STATE.pc).padStart(2,'0'), { kind:'addr' });
+  STATE.mar = STATE.pc;
+  flashReg(rMAR, true);
+  renderRegs();
+
+  setPhase('fetch: MEM[MAR] → MDR');
+  flashCell(STATE.mar);
+  await flyPacket(cellEls[STATE.mar], rMDR, String(STATE.mem[STATE.mar]).padStart(3,'0'));
+  STATE.mdr = STATE.mem[STATE.mar];
+  flashReg(rMDR, true);
+  renderRegs();
+
+  setPhase('fetch: MDR → IR');
+  await flyPacket(rMDR, rIR, fmtIR(STATE.mdr));
+  STATE.ir = STATE.mdr;
+  flashReg(rIR, true);
+  renderRegs();
+
+  setPhase('fetch: PC++');
+  STATE.pc = (STATE.pc + 1) % 100;
+  flashReg(rPC, true);
+  renderRegs();
+  markPC();
+  await pace(0.3);
+}
+
+function decodeIR() {
+  const ir = STATE.ir;
+  if (ir === 901) return { op:'INP' };
+  if (ir === 902) return { op:'OUT' };
+  if (ir === 922) return { op:'OTC' };
+  const opcode = Math.floor(ir / 100);
+  const addr = ir % 100;
+  switch (opcode) {
+    case 0: return { op:'HLT' };
+    case 1: return { op:'ADD', addr };
+    case 2: return { op:'SUB', addr };
+    case 3: return { op:'STA', addr };
+    case 5: return { op:'LDA', addr };
+    case 6: return { op:'BRA', addr };
+    case 7: return { op:'BRZ', addr };
+    case 8: return { op:'BRP', addr };
+    case 9: return { op:'IO?', addr };
+    default: return { op:'ERR' };
+  }
+}
+
+async function executePhase() {
+  const d = decodeIR();
+  log(`@${String(STATE.mar).padStart(2,'0')}  ${fmtIR(STATE.ir)}  ${d.op}${d.addr!==undefined?(' '+String(d.addr).padStart(2,'0')):''}`, 'exec');
+
+  switch (d.op) {
+    case 'HLT':
+      setPhase('execute: HLT');
+      flashReg(rIR);
+      STATE.halted = true;
+      STATE.running = false;
+      setState('halted');
+      return;
+
+    case 'ADD':
+    case 'SUB': {
+      setPhase(`execute: ${d.op} — IR[addr] → MAR`);
+      await flyPacket(rIR, rMAR, String(d.addr).padStart(2,'0'), { kind:'addr' });
+      STATE.mar = d.addr; flashReg(rMAR, true); renderRegs();
+
+      setPhase('execute: MEM[MAR] → MDR');
+      flashCell(STATE.mar);
+      await flyPacket(cellEls[STATE.mar], rMDR, String(STATE.mem[STATE.mar]).padStart(3,'0'));
+      STATE.mdr = STATE.mem[STATE.mar]; flashReg(rMDR, true); renderRegs();
+
+      setPhase(`execute: ACC ${d.op==='ADD'?'+':'-'}= MDR`);
+      await flyPacket(rMDR, rACC, fmtIR(STATE.mdr));
+      if (d.op === 'ADD') STATE.acc = STATE.acc + STATE.mdr;
+      else                STATE.acc = STATE.acc - STATE.mdr;
+      if (STATE.acc > 999) STATE.acc -= 1000;      // LMC behavior: wrap / overflow
+      if (STATE.acc < -999) STATE.acc += 1000;
+      flashReg(rACC, true); renderRegs();
+      return;
+    }
+
+    case 'LDA': {
+      setPhase('execute: LDA — IR[addr] → MAR');
+      await flyPacket(rIR, rMAR, String(d.addr).padStart(2,'0'), { kind:'addr' });
+      STATE.mar = d.addr; flashReg(rMAR, true); renderRegs();
+
+      setPhase('execute: MEM[MAR] → MDR');
+      flashCell(STATE.mar);
+      await flyPacket(cellEls[STATE.mar], rMDR, String(STATE.mem[STATE.mar]).padStart(3,'0'));
+      STATE.mdr = STATE.mem[STATE.mar]; flashReg(rMDR, true); renderRegs();
+
+      setPhase('execute: MDR → ACC');
+      await flyPacket(rMDR, rACC, fmtIR(STATE.mdr));
+      STATE.acc = STATE.mdr;
+      flashReg(rACC, true); renderRegs();
+      return;
+    }
+
+    case 'STA': {
+      setPhase('execute: STA — IR[addr] → MAR');
+      await flyPacket(rIR, rMAR, String(d.addr).padStart(2,'0'), { kind:'addr' });
+      STATE.mar = d.addr; flashReg(rMAR, true); renderRegs();
+
+      setPhase('execute: ACC → MDR');
+      await flyPacket(rACC, rMDR, fmtACC(STATE.acc));
+      STATE.mdr = STATE.acc; flashReg(rMDR, true); renderRegs();
+
+      setPhase('execute: MDR → MEM[MAR]');
+      await flyPacket(rMDR, cellEls[STATE.mar], fmtIR(STATE.mdr));
+      STATE.mem[STATE.mar] = clampCell(STATE.mdr);
+      renderMemCell(STATE.mar);
+      flashCell(STATE.mar, true);
+      return;
+    }
+
+    case 'BRA':
+      setPhase('execute: BRA — IR[addr] → PC');
+      await flyPacket(rIR, rPC, String(d.addr).padStart(2,'0'), { kind:'ctrl' });
+      STATE.pc = d.addr;
+      flashReg(rPC, true); renderRegs(); markPC();
+      return;
+
+    case 'BRZ':
+      setPhase(`execute: BRZ — ACC==0 ? ${STATE.acc===0}`);
+      flashReg(rACC);
+      await pace(0.4);
+      if (STATE.acc === 0) {
+        await flyPacket(rIR, rPC, String(d.addr).padStart(2,'0'), { kind:'ctrl' });
+        STATE.pc = d.addr;
+        flashReg(rPC, true); renderRegs(); markPC();
+      }
+      return;
+
+    case 'BRP':
+      setPhase(`execute: BRP — ACC≥0 ? ${STATE.acc>=0}`);
+      flashReg(rACC);
+      await pace(0.4);
+      if (STATE.acc >= 0) {
+        await flyPacket(rIR, rPC, String(d.addr).padStart(2,'0'), { kind:'ctrl' });
+        STATE.pc = d.addr;
+        flashReg(rPC, true); renderRegs(); markPC();
+      }
+      return;
+
+    case 'INP': {
+      setPhase('execute: INP — waiting for input');
+      let v;
+      if (STATE.inputMode === 'prompt') {
+        // Always pause and ask interactively, even if the queue has items
+        v = await requestInput();
+        if (v === null) return;  // aborted (reset/pause)
+      } else {
+        if (STATE.inputQ.length === 0) {
+          STATE.waitingInput = true;
+          setState('wait input');
+          log('• waiting for input (enter numbers above)', '');
+          while (STATE.inputQ.length === 0) {
+            await sleep(100);
+            if (!STATE.running) return; // user paused/stopped
+          }
+          STATE.waitingInput = false;
+          if (STATE.running) setState('running');
+        }
+        v = STATE.inputQ.shift();
+        renderIO();
+      }
+      // animate from input box to ACC
+      const inBox = $('inBox');
+      await flyPacket(inBox, rACC, String(v));
+      STATE.acc = clampCell(v);
+      flashReg(rACC, true); renderRegs();
+      return;
+    }
+
+    case 'OUT': {
+      setPhase('execute: OUT — ACC → output');
+      const outBox = $('outBox');
+      await flyPacket(rACC, outBox, fmtACC(STATE.acc));
+      STATE.outputQ.push(String(STATE.acc));
+      renderIO();
+      highlightLastOutput();
+      return;
+    }
+
+    case 'OTC': {
+      setPhase('execute: OTC — ACC as char → output');
+      const outBox = $('outBox');
+      const ch = String.fromCharCode(((STATE.acc % 256) + 256) % 256);
+      await flyPacket(rACC, outBox, `'${ch}'`);
+      STATE.outputQ.push(ch);
+      renderIO();
+      highlightLastOutput();
+      return;
+    }
+
+    default:
+      log('! unknown instruction at PC=' + STATE.mar + ': ' + fmtIR(STATE.ir), 'err');
+      STATE.halted = true;
+      STATE.running = false;
+      setState('halted');
+      return;
+  }
+}
+function highlightLastOutput() {
+  const q = outQueueEl.children;
+  if (!q.length) return;
+  const last = q[q.length-1];
+  // restart animation
+  last.classList.remove('new'); void last.offsetWidth; last.classList.add('new');
+  const outBox = $('outBox');
+  outBox.classList.remove('print-flash'); void outBox.offsetWidth; outBox.classList.add('print-flash');
+  setTimeout(() => { last.classList.remove('new'); outBox.classList.remove('print-flash'); }, 1400);
+}
+
+async function cycle() {
+  STATE.cycles++;
+  renderRegs();
+  await fetchPhase();
+  if (!STATE.running && !STATE.singleStep) return;
+  await executePhase();
+  STATE.insns++;
+  renderRegs();
+  setPhase('—');
+}
+
+/* ---------- Run loop ---------- */
+let loopPromise = null;
+async function runLoop() {
+  STATE.running = true;
+  STATE.wasReset = false;
+  setState('running');
+  while (STATE.running && !STATE.halted) {
+    await cycle();
+  }
+  if (STATE.wasReset)       { STATE.wasReset = false; setState('idle'); setPhase('—'); }
+  else if (STATE.halted)    { setState('halted'); setPhase('—'); }
+  else                      { setState('paused'); setPhase('—'); }
+  loopPromise = null;
+}
+
+/* ---------- Controls ---------- */
+$('runBtn').addEventListener('click', () => {
+  if (STATE.halted) return;
+  if (STATE.running) return;
+  STATE.singleStep = false;
+  loopPromise = runLoop();
+});
+$('stepBtn').addEventListener('click', async () => {
+  if (STATE.halted || STATE.running) return;
+  STATE.singleStep = true;
+  STATE.running = true;
+  setState('running');
+  await cycle();
+  STATE.running = false;
+  STATE.singleStep = false;
+  if (!STATE.halted) { setState('paused'); setPhase('—'); }
+});
+$('pauseBtn').addEventListener('click', () => {
+  if (!STATE.running) return;
+  STATE.running = false;
+  setState('paused');
+  if (STATE.pendingInput) STATE.pendingInput();
+});
+$('resetBtn').addEventListener('click', () => {
+  STATE.running = false;
+  STATE.halted = false;
+  STATE.waitingInput = false;
+  STATE.wasReset = true;
+  if (STATE.pendingInput) STATE.pendingInput();
+  STATE.acc = 0;
+  STATE.pc = 0;
+  STATE.mar = null; STATE.mdr = null; STATE.ir = null;
+  STATE.cycles = 0; STATE.insns = 0;
+  STATE.outputQ = [];
+  renderRegs(); renderIO(); markPC();
+  setState('idle'); setPhase('—');
+  log('— reset —', '');
+});
+$('clearBtn').addEventListener('click', () => {
+  STATE.mem = new Array(100).fill(0);
+  STATE.labels = {};
+  renderAllMem();
+  log('memory cleared', '');
+});
+$('assembleBtn').addEventListener('click', () => {
+  try {
+    const r = assemble($('code').value);
+    STATE.mem = r.mem;
+    STATE.labels = r.labels;
+    STATE.acc = 0; STATE.pc = 0; STATE.mar=null; STATE.mdr=null; STATE.ir=null;
+    STATE.halted = false; STATE.running = false;
+    STATE.cycles = 0; STATE.insns = 0;
+    STATE.outputQ = [];
+    renderAllMem(); renderRegs(); renderIO();
+    setState('idle'); setPhase('—');
+    log('✓ assembled — ' + Object.keys(r.labels).length + ' labels', 'ok');
+  } catch (e) {
+    log('✗ ' + e.message, 'err');
+    setState('idle');
+  }
+});
+$('inField').addEventListener('change', syncInput);
+$('inField').addEventListener('blur',  syncInput);
+$('inField').addEventListener('keydown', e => { if (e.key === 'Enter') syncInput(); });
+
+/* ---------- Input mode ---------- */
+const MODE_HELP = {
+  prompt:
+    '<b>Prompt mode</b> (recommended for learning). Whenever the program runs an <b>INP</b> ' +
+    'instruction, the computer <b>pauses</b> and asks you for a number, just like the original ' +
+    'Little Man looking out the "IN" slot and waiting for a new card. Type a number and press ' +
+    '<b>Enter</b> — the value will fly along the data bus into the accumulator, then the program ' +
+    'continues. Great for seeing cause and effect one step at a time.',
+  queue:
+    '<b>Queue mode</b> (batch input). Type all the numbers you want to feed the program ahead of ' +
+    'time in the box below, separated by commas (e.g. <code>5, 3, 10</code>). Each <b>INP</b> ' +
+    'instruction takes the next number from the queue <i>without stopping</i>. Useful once you ' +
+    'already understand the program and just want to watch it run without interruption.'
+};
+function setInputMode(mode) {
+  STATE.inputMode = mode;
+  $('modeQueueBtn').classList.toggle('active',  mode === 'queue');
+  $('modePromptBtn').classList.toggle('active', mode === 'prompt');
+  $('inField').style.display = (mode === 'queue') ? '' : 'none';
+  $('inQueue').style.display = (mode === 'queue') ? '' : 'none';
+  $('inModeLabel').textContent = (mode === 'queue')
+    ? 'queue (edit: comma-sep)'
+    : 'prompt (asks on every INP)';
+  $('modeExplain').innerHTML = MODE_HELP[mode];
+}
+$('modeQueueBtn').addEventListener('click',  () => setInputMode('queue'));
+$('modePromptBtn').addEventListener('click', () => setInputMode('prompt'));
+
+function requestInput() {
+  return new Promise(resolve => {
+    const box = $('promptBox');
+    const field = $('promptField');
+    box.style.display = 'block';
+    box.classList.add('pulse');
+    field.value = '';
+    field.focus();
+    STATE.waitingInput = true;
+    setState('wait input');
+    log('• prompt: waiting for input', '');
+
+    const finish = (val) => {
+      box.style.display = 'none';
+      box.classList.remove('pulse');
+      STATE.waitingInput = false;
+      STATE.pendingInput = null;
+      field.removeEventListener('keydown', onKey);
+      if (val !== null && STATE.running) setState('running');
+      resolve(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Enter') {
+        const raw = field.value.trim();
+        if (!/^-?\d+$/.test(raw)) {
+          field.style.borderColor = 'var(--danger)';
+          setTimeout(() => field.style.borderColor = 'var(--accent-2)', 400);
+          return;
+        }
+        finish(parseInt(raw, 10));
+      }
+    };
+    field.addEventListener('keydown', onKey);
+    // allow reset/pause to abort the wait
+    STATE.pendingInput = () => finish(null);
+  });
+}
+setInputMode('prompt');
+function syncInput() {
+  const raw = $('inField').value.trim();
+  if (!raw) { STATE.inputQ = []; renderIO(); return; }
+  const parts = raw.split(/[\s,]+/).filter(Boolean);
+  const nums = [];
+  for (const p of parts) {
+    if (/^-?\d+$/.test(p)) nums.push(parseInt(p,10));
+  }
+  STATE.inputQ = nums;
+  renderIO();
+}
+
+/* ---------- Examples ---------- */
+const EXAMPLES = {
+  add: `// Add two numbers
+        INP
+        STA A
+        INP
+        ADD A
+        OUT
+        HLT
+A       DAT 0`,
+
+  countdown: `// Countdown from input down to 0
+        INP
+LOOP    OUT
+        SUB ONE
+        BRP LOOP
+        HLT
+ONE     DAT 1`,
+
+  multiply: `// Multiply A * B  (inputs: A then B)
+        INP
+        STA A
+        INP
+        STA B
+LOOP    LDA B
+        BRZ DONE
+        LDA RES
+        ADD A
+        STA RES
+        LDA B
+        SUB ONE
+        STA B
+        BRA LOOP
+DONE    LDA RES
+        OUT
+        HLT
+A       DAT 0
+B       DAT 0
+RES     DAT 0
+ONE     DAT 1`,
+
+  fib: `// Print first N Fibonacci numbers (N = input)
+        INP
+        STA N
+        LDA F0
+        OUT
+        LDA F1
+        OUT
+LOOP    LDA N
+        SUB TWO
+        STA N
+        BRP MORE
+        HLT
+MORE    LDA F0
+        ADD F1
+        STA F2
+        OUT
+        LDA F1
+        STA F0
+        LDA F2
+        STA F1
+        BRA LOOP
+N       DAT 0
+F0      DAT 0
+F1      DAT 1
+F2      DAT 0
+TWO     DAT 1`,
+
+  hello: `// Print 'HI\\n' using OTC
+        LDA H
+        OTC
+        LDA I
+        OTC
+        LDA NL
+        OTC
+        HLT
+H       DAT 72
+I       DAT 73
+NL      DAT 10`,
+
+  echo: `// Echo inputs until 0 is entered
+LOOP    INP
+        BRZ END
+        OUT
+        BRA LOOP
+END     HLT`,
+};
+$('sampleSel').addEventListener('change', e => {
+  const k = e.target.value;
+  if (!k) return;
+  $('code').value = EXAMPLES[k].split('\n').map(l => l.replace(/^ {8}/,'    ')).join('\n');
+  e.target.value = '';
+});
+$('code').value = EXAMPLES.add.split('\n').map(l => l.replace(/^ {8}/,'    ')).join('\n');
+
+/* ---------- Init ---------- */
+renderAllMem();
+renderRegs();
+renderIO();
+setState('idle');
+log('ready. assemble a program and press Run.', 'ok');
+
+// Also keep bus layer in sync with window
+window.addEventListener('resize', () => { busPath.setAttribute('d',''); });
+
+/* ---------- Register hover popovers (Popover API) ---------- */
+(function wireRegisterPopovers() {
+  const supported = HTMLElement.prototype.hasOwnProperty('popover');
+  document.querySelectorAll('.reg[data-popover]').forEach(reg => {
+    const pop = document.getElementById(reg.dataset.popover);
+    if (!pop) return;
+    const show = () => {
+      // Position to the left of the register; fall back to right if offscreen
+      if (supported) { try { pop.showPopover(); } catch(_) {} }
+      const r = reg.getBoundingClientRect();
+      const pw = 340;
+      let left = r.left - pw - 14;
+      if (left < 8) left = r.right + 14;
+      pop.style.position = 'fixed';
+      pop.style.left = left + 'px';
+      pop.style.top  = Math.max(8, r.top - 6) + 'px';
+    };
+    const hide = () => { if (supported) { try { pop.hidePopover(); } catch(_) {} } };
+    reg.addEventListener('mouseenter', show);
+    reg.addEventListener('mouseleave', hide);
+    reg.addEventListener('focusin',  show);
+    reg.addEventListener('focusout', hide);
+    reg.tabIndex = 0;
+  });
+})();
+</script>
+</body>
+</html>
